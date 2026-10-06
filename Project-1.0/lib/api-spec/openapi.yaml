@@ -1,0 +1,236 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: storage
+    description: Private B2 object storage operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /b2/objects/{fileId}:
+    parameters:
+      - name: fileId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: uploadB2Object
+      tags: [storage]
+      summary: Upload an object to private B2 storage
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              $ref: "#/components/schemas/B2ObjectBody"
+      responses:
+        "201":
+          description: Object uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/B2UploadResult"
+        "400":
+          description: Invalid object identifier
+        "401":
+          description: A valid customer session is required
+        "502":
+          description: B2 storage request failed
+    get:
+      operationId: getB2Object
+      tags: [storage]
+      summary: Stream an object from private B2 storage
+      parameters:
+        - name: Range
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: download
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object bytes
+          content:
+            application/octet-stream:
+              schema:
+                $ref: "#/components/schemas/B2ObjectBody"
+        "206":
+          description: Partial object bytes
+          content:
+            application/octet-stream:
+              schema:
+                $ref: "#/components/schemas/B2ObjectBody"
+        "401":
+          description: A valid customer session is required
+        "404":
+          description: Object not found
+    delete:
+      operationId: deleteB2Object
+      tags: [storage]
+      summary: Delete an owned object from private B2 storage
+      responses:
+        "204":
+          description: Object deleted
+        "401":
+          description: A valid customer session is required
+  /b2/objects/{fileId}/signed-url:
+    parameters:
+      - name: fileId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getB2SignedUrl
+      tags: [storage]
+      summary: Create a short-lived private B2 download URL
+      parameters:
+        - name: expiresIn
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 60
+            maximum: 3600
+        - name: download
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signed B2 URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/B2SignedUrlResponse"
+        "401":
+          description: A valid customer session is required
+  /b2/objects/{fileId}/inspect:
+    parameters:
+      - name: fileId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: inspectB2Object
+      tags: [storage]
+      summary: Inspect the header of an owned B2 video
+      responses:
+        "200":
+          description: Video header inspection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/B2VideoInspectResponse"
+        "401":
+          description: A valid customer session is required
+        "404":
+          description: Object not found
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    B2ObjectBody:
+      type: string
+    B2UploadResult:
+      type: object
+      required: [storageKey, bucketId, sizeBytes, mimeType]
+      properties:
+        storageKey:
+          type: string
+        bucketId:
+          type: string
+        sizeBytes:
+          type: integer
+          minimum: 0
+        mimeType:
+          type: string
+    B2SignedUrlResponse:
+      type: object
+      required: [signedUrl, expiresIn]
+      properties:
+        signedUrl:
+          type: string
+          format: uri
+        expiresIn:
+          type: integer
+          minimum: 60
+          maximum: 3600
+    B2VideoInspectResponse:
+      type: object
+      required:
+        - fileId
+        - fileName
+        - mimeType
+        - size
+        - codec
+        - moovBeforeMdat
+        - moovFound
+        - mdatFound
+        - atoms
+        - headerBytesRead
+      properties:
+        fileId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        mimeType:
+          type: string
+        size:
+          type: integer
+          minimum: 0
+        codec:
+          type: object
+          properties:
+            found:
+              type: string
+          additionalProperties:
+            type: string
+        moovBeforeMdat:
+          type: boolean
+        moovFound:
+          type: boolean
+        mdatFound:
+          type: boolean
+        atoms:
+          type: object
+          additionalProperties: true
+        headerBytesRead:
+          type: integer
+          minimum: 0
+

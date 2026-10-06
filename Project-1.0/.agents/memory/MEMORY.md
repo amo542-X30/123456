@@ -1,0 +1,2 @@
+- [Supabase is already configured](supabase-existing-setup.md) — migrations, private vault/RLS, and both Edge Functions are verified; don't ask the user to repeat setup.
+- [AM0SP storage boundary](am0sp-storage-boundary.md) — send new files to B2 while preserving existing Supabase files, Auth, Passkeys, schema, and UI.

@@ -1,0 +1,29 @@
+modules = ["nodejs-24"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+VITE_SUPABASE_URL = "https://siwuhmlnwzdywhwzxwpl.supabase.co"
+B2_BUCKET_NAME = "am0sp-vault"
+
+[userenv.development]
+VITE_APP_URL = "https://ff5b4d0a-b4b3-4f90-8bc8-a7c5ccfdf4cf-00-10kdvgjni58dz.sisko.replit.dev"

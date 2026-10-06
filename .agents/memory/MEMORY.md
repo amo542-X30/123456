@@ -1,0 +1,1 @@
+- [Nested artifact workflows](nested-artifact-workflows.md) — service commands start from the artifact directory; calculate paths to imported projects from that working directory.

@@ -1,0 +1,5 @@
+[functions.media-proxy]
+verify_jwt = true
+
+[functions.passkey-auth]
+verify_jwt = false
