@@ -9,7 +9,7 @@ args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
 [workflows]
-runButton = "Project"
+runButton = "Project-1.0/artifacts/am0sp-customer: web"
 
 [agent]
 stack = "PNPM_WORKSPACE"

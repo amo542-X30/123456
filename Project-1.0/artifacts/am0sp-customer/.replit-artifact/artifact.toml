@@ -4,11 +4,10 @@ title = "AM0SP Customer App"
 description = "A private customer web app for AM0SP account access, private file management and media viewing, and account security."
 version = "1.0.0"
 id = "artifacts/am0sp-customer"
-router = "path"
 
 [[services]]
 name = "web"
-paths = [ "/*" ]
+paths = [ "/" ]
 localPort = 25126
 
 [services.development]
@@ -17,7 +16,7 @@ run = "pnpm --filter @workspace/am0sp-customer run dev"
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/am0sp-customer", "run", "build" ]
 serve = "static"
-publicDir = "artifacts/am0sp-customer/dist/public"
+publicDir = "Project-1.0/artifacts/am0sp-customer/dist/public"
 
 [[services.production.rewrites]]
 from = "/*"
