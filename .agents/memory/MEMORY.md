@@ -1,2 +1,3 @@
 - [Nested artifact workflows](nested-artifact-workflows.md) — service commands start from the artifact directory; calculate paths to imported projects from that working directory.
 - [Cloudflare static builds](cloudflare-static-builds.md) — filter installs to the nested customer app and keep Wrangler compatible with the active Node runtime.
+- [Cloudflare Worker secrets](cloudflare-worker-secrets.md) — verify secret bindings after upload; individual Wrangler puts worked where bulk upload did not.
