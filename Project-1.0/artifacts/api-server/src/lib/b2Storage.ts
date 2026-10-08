@@ -114,7 +114,7 @@ async function initializeTarget(): Promise<B2Target> {
   };
 }
 
-async function getTarget(): Promise<B2Target> {
+export async function getB2Target(): Promise<B2Target> {
   if (!targetPromise) {
     targetPromise = initializeTarget().catch((error: unknown) => {
       targetPromise = undefined;
@@ -130,7 +130,7 @@ export async function uploadB2Object(options: {
   contentType: string;
   contentLength?: number;
 }): Promise<{ bucketMarker: string; sizeBytes: number; mimeType: string }> {
-  const target = await getTarget();
+  const target = await getB2Target();
   const upload = new Upload({
     client: target.client,
     params: {
@@ -184,7 +184,7 @@ export async function getB2Object(options: {
   key: string;
   range?: string;
 }) {
-  const target = await getTarget();
+  const target = await getB2Target();
   return target.client.send(
     new GetObjectCommand({
       Bucket: target.bucketName,
@@ -195,7 +195,7 @@ export async function getB2Object(options: {
 }
 
 export async function deleteB2Object(key: string): Promise<void> {
-  const target = await getTarget();
+  const target = await getB2Target();
   let keyMarker: string | undefined;
   let versionIdMarker: string | undefined;
 
@@ -263,7 +263,7 @@ export async function createB2SignedUrl(options: {
   expiresIn: number;
   downloadName?: string;
 }): Promise<string> {
-  const target = await getTarget();
+  const target = await getB2Target();
   const command = new GetObjectCommand({
     Bucket: target.bucketName,
     Key: options.key,
@@ -275,7 +275,7 @@ export async function createB2SignedUrl(options: {
 }
 
 export async function inspectB2Video(key: string, fileId: string): Promise<B2VideoInspection> {
-  const target = await getTarget();
+  const target = await getB2Target();
   const [head, rangeResult] = await Promise.all([
     target.client.send(
       new HeadObjectCommand({
