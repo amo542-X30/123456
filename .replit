@@ -31,3 +31,8 @@ externalPort = 80
 localPort = 8976
 externalPort = 3000
 exposeLocalhost = true
+
+[userenv]
+
+[userenv.production]
+VITE_APP_URL = "https://project-1-0.amo5420000.workers.dev"
