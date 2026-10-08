@@ -2,8 +2,17 @@ import { supabase } from './supabase';
 import { getDeviceName } from './utils';
 import type { Passkey, UserSettings } from './types';
 
-const passkeyFunctionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/passkey-auth`;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
+const runtimeSupabaseConfig =
+  typeof window !== 'undefined' ? window.__AM0SP_SUPABASE_CONFIG__ : undefined;
+const supabaseUrl = (
+  runtimeSupabaseConfig?.url ?? import.meta.env.VITE_SUPABASE_URL ?? ''
+).trim().replace(/\/+$/, '');
+const supabaseAnonKey = (
+  runtimeSupabaseConfig?.anonKey ?? import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
+).trim();
+const passkeyFunctionUrl = supabaseUrl
+  ? `${supabaseUrl}/functions/v1/passkey-auth`
+  : '';
 
 type PasskeyAction = 'registration-options' | 'registration-verify' | 'authentication-options' | 'authentication-verify';
 
@@ -25,6 +34,7 @@ function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
 }
 
 async function callPasskeyFunction(action: PasskeyAction, body: Record<string, unknown> = {}, requireSession = true) {
+  if (!passkeyFunctionUrl) throw new Error('Supabase URL is not configured.');
   if (!supabaseAnonKey) throw new Error('Supabase publishable key is not configured.');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
