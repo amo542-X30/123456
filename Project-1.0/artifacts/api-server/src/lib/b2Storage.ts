@@ -21,6 +21,12 @@ type B2Authorization = {
   };
 };
 
+export type B2StorageEnvironment = {
+  B2_APPLICATION_KEY_ID?: string;
+  B2_APPLICATION_KEY?: string;
+  B2_BUCKET_NAME?: string;
+};
+
 type B2Target = {
   client: S3Client;
   bucketName: string;
@@ -42,9 +48,9 @@ export type B2VideoInspection = {
 
 let targetPromise: Promise<B2Target> | undefined;
 
-async function initializeTarget(): Promise<B2Target> {
-  const applicationKeyId = process.env.B2_APPLICATION_KEY_ID?.trim();
-  const applicationKey = process.env.B2_APPLICATION_KEY?.trim();
+async function initializeTarget(environment: B2StorageEnvironment): Promise<B2Target> {
+  const applicationKeyId = environment.B2_APPLICATION_KEY_ID?.trim();
+  const applicationKey = environment.B2_APPLICATION_KEY?.trim();
   if (!applicationKeyId || !applicationKey) {
     throw new Error("B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY must be configured.");
   }
@@ -81,7 +87,7 @@ async function initializeTarget(): Promise<B2Target> {
     },
   });
 
-  const configuredBucketName = process.env.B2_BUCKET_NAME?.trim();
+  const configuredBucketName = environment.B2_BUCKET_NAME?.trim();
   const restrictedBucketName = authorization.allowed?.bucketName?.trim() || undefined;
   if (
     configuredBucketName &&
@@ -114,9 +120,11 @@ async function initializeTarget(): Promise<B2Target> {
   };
 }
 
-export async function getB2Target(): Promise<B2Target> {
+export async function getB2Target(
+  environment: B2StorageEnvironment = process.env,
+): Promise<B2Target> {
   if (!targetPromise) {
-    targetPromise = initializeTarget().catch((error: unknown) => {
+    targetPromise = initializeTarget(environment).catch((error: unknown) => {
       targetPromise = undefined;
       throw error;
     });
@@ -129,8 +137,8 @@ export async function uploadB2Object(options: {
   body: Readable;
   contentType: string;
   contentLength?: number;
-}): Promise<{ bucketMarker: string; sizeBytes: number; mimeType: string }> {
-  const target = await getB2Target();
+}, environment: B2StorageEnvironment = process.env): Promise<{ bucketMarker: string; sizeBytes: number; mimeType: string }> {
+  const target = await getB2Target(environment);
   const upload = new Upload({
     client: target.client,
     params: {
@@ -169,7 +177,7 @@ export async function uploadB2Object(options: {
     };
   } catch (verificationError) {
     try {
-      await deleteB2Object(options.key);
+      await deleteB2Object(options.key, environment);
     } catch (cleanupError) {
       throw new AggregateError(
         [verificationError, cleanupError],
@@ -183,8 +191,8 @@ export async function uploadB2Object(options: {
 export async function getB2Object(options: {
   key: string;
   range?: string;
-}) {
-  const target = await getB2Target();
+}, environment: B2StorageEnvironment = process.env) {
+  const target = await getB2Target(environment);
   return target.client.send(
     new GetObjectCommand({
       Bucket: target.bucketName,
@@ -194,8 +202,11 @@ export async function getB2Object(options: {
   );
 }
 
-export async function deleteB2Object(key: string): Promise<void> {
-  const target = await getB2Target();
+export async function deleteB2Object(
+  key: string,
+  environment: B2StorageEnvironment = process.env,
+): Promise<void> {
+  const target = await getB2Target(environment);
   let keyMarker: string | undefined;
   let versionIdMarker: string | undefined;
 
@@ -262,8 +273,8 @@ export async function createB2SignedUrl(options: {
   key: string;
   expiresIn: number;
   downloadName?: string;
-}): Promise<string> {
-  const target = await getB2Target();
+}, environment: B2StorageEnvironment = process.env): Promise<string> {
+  const target = await getB2Target(environment);
   const command = new GetObjectCommand({
     Bucket: target.bucketName,
     Key: options.key,
@@ -274,8 +285,12 @@ export async function createB2SignedUrl(options: {
   return getSignedUrl(target.client, command, { expiresIn: options.expiresIn });
 }
 
-export async function inspectB2Video(key: string, fileId: string): Promise<B2VideoInspection> {
-  const target = await getB2Target();
+export async function inspectB2Video(
+  key: string,
+  fileId: string,
+  environment: B2StorageEnvironment = process.env,
+): Promise<B2VideoInspection> {
+  const target = await getB2Target(environment);
   const [head, rangeResult] = await Promise.all([
     target.client.send(
       new HeadObjectCommand({

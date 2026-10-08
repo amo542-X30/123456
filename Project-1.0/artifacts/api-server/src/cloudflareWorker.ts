@@ -11,13 +11,11 @@ import {
   getB2Object,
   getB2Target,
   inspectB2Video,
+  type B2StorageEnvironment,
 } from "./lib/b2Storage";
 
-interface Env {
+interface Env extends B2StorageEnvironment {
   ASSETS: { fetch(request: Request): Promise<Response> };
-  B2_APPLICATION_KEY_ID?: string;
-  B2_APPLICATION_KEY?: string;
-  B2_BUCKET_NAME?: string;
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
 }
@@ -90,8 +88,8 @@ function storageError(error: unknown): Response {
   );
 }
 
-async function removeAllVersions(key: string): Promise<void> {
-  const target = await getB2Target();
+async function removeAllVersions(key: string, env: Env): Promise<void> {
+  const target = await getB2Target(env);
   let keyMarker: string | undefined;
   let versionIdMarker: string | undefined;
   for (;;) {
@@ -159,12 +157,12 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
       if (!Number.isInteger(expiresIn) || expiresIn < 60 || expiresIn > 3600) {
         return json({ error: "Invalid signed URL request." }, 400);
       }
-      const signedUrl = await createB2SignedUrl({ key, expiresIn, downloadName });
+      const signedUrl = await createB2SignedUrl({ key, expiresIn, downloadName }, env);
       return json({ signedUrl, expiresIn });
     }
 
     if (suffix === "inspect" && request.method === "GET") {
-      return json(await inspectB2Video(key, fileId));
+      return json(await inspectB2Video(key, fileId, env));
     }
 
     if (suffix) return json({ error: "Not found." }, 404);
@@ -183,7 +181,7 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
       const mimeType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(rawMimeType)
         ? rawMimeType
         : "application/octet-stream";
-      const target = await getB2Target();
+      const target = await getB2Target(env);
       await target.client.send(
         new PutObjectCommand({
           Bucket: target.bucketName,
@@ -220,7 +218,7 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
       const object = await getB2Object({
         key,
         range: request.headers.get("range") ?? undefined,
-      });
+      }, env);
       const headers = new Headers({
         "Accept-Ranges": "bytes",
         "Content-Type": object.ContentType || "application/octet-stream",
@@ -243,7 +241,7 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
     }
 
     if (request.method === "DELETE") {
-      await removeAllVersions(key);
+      await removeAllVersions(key, env);
       return new Response(null, { status: 204 });
     }
 
