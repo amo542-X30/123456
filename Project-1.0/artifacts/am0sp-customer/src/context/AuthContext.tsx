@@ -5,26 +5,11 @@ import { recordDeviceLogin, logSecurityEvent } from '@/lib/securityService';
 import { getDeviceName } from '@/lib/utils';
 import { checkRateLimit, resetRateLimit } from '@/lib/rateLimiter';
 
-// Password-reset redirects must target an explicitly configured app origin.
-// Do not derive a production redirect from an untrusted request origin.
-const ALLOWED_REDIRECT_ORIGINS = [
-  import.meta.env.VITE_APP_URL,
-  'http://localhost:5173',
-].flatMap((value) => {
-  if (!value) return [];
-  try {
-    return [new URL(value).origin];
-  } catch {
-    return [];
-  }
-});
-
 function getResetRedirectUrl(): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  if (!ALLOWED_REDIRECT_ORIGINS.includes(origin)) {
-    throw new Error('Configure VITE_APP_URL with the customer web app origin before requesting a password reset.');
+  if (typeof window === 'undefined') {
+    throw new Error('Password reset is only available in the customer web app.');
   }
-  return `${origin}/reset-password`;
+  return new URL('/reset-password', window.location.origin).toString();
 }
 
 interface AuthContextType {

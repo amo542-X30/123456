@@ -9,6 +9,12 @@ For this Worker, `wrangler secret bulk` reported successful uploads but left the
 
 **How to apply:** For this Worker, upload each secret individually, confirm the expected names appear in `wrangler secret list`, and smoke-test an invalid bearer token to confirm session validation is configured.
 
+Secret presence in Replit does not prove Wrangler can authenticate to Cloudflare; the configured token may still be invalid or revoked.
+
+**Why:** A production deploy attempt was rejected by Cloudflare as an invalid access token even though the Replit secret existed.
+
+**How to apply:** Check Wrangler authentication with a read-only Cloudflare API operation before attempting a production deploy.
+
 The browser app's `VITE_SUPABASE_ANON_KEY` and the Worker's `SUPABASE_ANON_KEY` must use the same current public client key. Before deploying, confirm the key succeeds against `/auth/v1/settings`; a synthetic password login should reach credential validation rather than return “Invalid API key.”
 
 **Why:** A stale key was present in both the deployed bundle and Worker; route checks alone did not distinguish that from an invalid customer session.

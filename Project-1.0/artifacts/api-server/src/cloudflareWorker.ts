@@ -168,7 +168,6 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
     if (suffix) return json({ error: "Not found." }, 404);
 
     if (request.method === "POST") {
-      if (!request.body) return json({ error: "Upload body is required." }, 400);
       const rawLength = request.headers.get("content-length");
       const contentLength = rawLength === null ? undefined : Number(rawLength);
       if (contentLength !== undefined && (!Number.isSafeInteger(contentLength) || contentLength < 0)) {
@@ -181,14 +180,29 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
       const mimeType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(rawMimeType)
         ? rawMimeType
         : "application/octet-stream";
+      // B2's S3 endpoint needs a known payload length. Preserve streaming for normal
+      // browser uploads, but calculate the length when an intermediary omitted it.
+      const body =
+        request.body ??
+        (contentLength === 0 ? new Uint8Array() : undefined);
+      if (!body) return json({ error: "Upload body is required." }, 400);
+      let uploadBody: Uint8Array | ReadableStream<Uint8Array>;
+      let uploadLength: number;
+      if (contentLength === undefined) {
+        uploadBody = new Uint8Array(await new Response(body).arrayBuffer());
+        uploadLength = uploadBody.byteLength;
+      } else {
+        uploadBody = body as ReadableStream<Uint8Array>;
+        uploadLength = contentLength;
+      }
       const target = await getB2Target(env);
       await target.client.send(
         new PutObjectCommand({
           Bucket: target.bucketName,
           Key: key,
-          Body: request.body as never,
+          Body: uploadBody as never,
           ContentType: mimeType,
-          ...(contentLength === undefined ? {} : { ContentLength: contentLength }),
+          ContentLength: uploadLength,
         }),
       );
       const head = await target.client.send(
@@ -199,7 +213,7 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
         await deleteB2Object(key);
         return json({ error: "B2 did not return a valid object size after upload." }, 502);
       }
-      if (contentLength !== undefined && sizeBytes !== contentLength) {
+      if (sizeBytes !== uploadLength) {
         await deleteB2Object(key);
         return json({ error: "The uploaded B2 object size did not match the request." }, 502);
       }
