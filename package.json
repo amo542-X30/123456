@@ -5,7 +5,7 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
-    "build:cloudflare": "pnpm --dir Project-1.0 install --filter @workspace/am0sp-customer --frozen-lockfile && PORT=25126 BASE_PATH=/ VITE_SUPABASE_URL=\"${VITE_SUPABASE_URL:?Missing Replit Secret VITE_SUPABASE_URL}\" VITE_SUPABASE_ANON_KEY=\"${VITE_SUPABASE_ANON_KEY:?Missing Replit Secret VITE_SUPABASE_ANON_KEY}\" VITE_APP_URL=\"${VITE_APP_URL:?Set VITE_APP_URL to the production customer-app origin}\" pnpm --dir Project-1.0 --filter @workspace/am0sp-customer run build",
+    "build:cloudflare": "pnpm --dir Project-1.0 install --filter @workspace/am0sp-customer --frozen-lockfile && PORT=25126 BASE_PATH=/ VITE_SUPABASE_URL=__WORKER_SUPABASE_URL__ VITE_SUPABASE_ANON_KEY=__WORKER_SUPABASE_ANON_KEY__ VITE_APP_URL=\"${VITE_APP_URL:?Set VITE_APP_URL to the production customer-app origin}\" pnpm --dir Project-1.0 --filter @workspace/am0sp-customer run build",
     "deploy:cloudflare": "pnpm run build:cloudflare && wrangler deploy --config wrangler.jsonc",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"

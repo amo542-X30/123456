@@ -251,12 +251,53 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function fetchAssets(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") return env.ASSETS.fetch(request);
+
+  const headers = new Headers(request.headers);
+  headers.delete("accept-encoding");
+  headers.delete("if-none-match");
+  headers.delete("if-modified-since");
+
+  const assetResponse = await env.ASSETS.fetch(new Request(request, { headers }));
+  if (!assetResponse.ok || !assetResponse.headers.get("content-type")?.toLowerCase().includes("text/html")) {
+    return assetResponse;
+  }
+
+  const supabaseUrl = env.SUPABASE_URL?.trim().replace(/\/+$/, "");
+  const anonKey = env.SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !anonKey) {
+    return json({ error: "Customer authentication is not configured." }, 503);
+  }
+
+  const html = await assetResponse.text();
+  const config = JSON.stringify({ url: supabaseUrl, anonKey }).replace(/</g, "\\u003c");
+  const configuredHtml = html.replace(
+    /<\/head>/i,
+    `<script>window.__AM0SP_SUPABASE_CONFIG__=${config};</script></head>`,
+  );
+  if (configuredHtml === html) {
+    return json({ error: "Customer app configuration could not be loaded." }, 502);
+  }
+
+  const responseHeaders = new Headers(assetResponse.headers);
+  responseHeaders.delete("content-length");
+  responseHeaders.delete("content-encoding");
+  responseHeaders.delete("etag");
+  responseHeaders.set("cache-control", "no-store");
+  return new Response(configuredHtml, {
+    status: assetResponse.status,
+    statusText: assetResponse.statusText,
+    headers: responseHeaders,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (pathname === "/api/healthz") return json({ status: "ok" });
     if (pathname.startsWith("/api/b2/")) return routeB2(request, env);
     if (pathname.startsWith("/api/")) return json({ error: "Not found." }, 404);
-    return env.ASSETS.fetch(request);
+    return fetchAssets(request, env);
   },
 };
