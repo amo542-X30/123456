@@ -208,19 +208,24 @@ Deno.serve(async (req: Request) => {
       const passkey = passkeyResult.data;
       if (!passkey?.public_key) return response({ error: "Authentication failed" }, 400, origin);
 
-      const verification = await verifyAuthenticationResponse({
-        response: body.response,
-        expectedChallenge: challenge,
-        expectedOrigin: APP_ORIGIN,
-        expectedRPID: APP_RPID,
-        requireUserVerification: true,
-        credential: {
-          id: passkey.credential_id,
-          publicKey: base64UrlDecode(passkey.public_key),
-          counter: passkey.counter,
-          transports: passkey.transports ?? [],
-        },
-      });
+      let verification;
+      try {
+        verification = await verifyAuthenticationResponse({
+          response: body.response,
+          expectedChallenge: challenge,
+          expectedOrigin: APP_ORIGIN,
+          expectedRPID: APP_RPID,
+          requireUserVerification: true,
+          credential: {
+            id: passkey.credential_id,
+            publicKey: base64UrlDecode(passkey.public_key),
+            counter: passkey.counter,
+            transports: passkey.transports ?? [],
+          },
+        });
+      } catch {
+        return response({ error: "Authentication failed" }, 400, origin);
+      }
       if (!verification.verified) return response({ error: "Authentication failed" }, 400, origin);
 
       // Parallel: update counter, delete challenge, and fetch user email — all independent
