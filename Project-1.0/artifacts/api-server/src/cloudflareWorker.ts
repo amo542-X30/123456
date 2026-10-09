@@ -1,7 +1,6 @@
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
-  HeadObjectCommand,
   ListObjectVersionsCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
@@ -205,24 +204,12 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
           ContentLength: uploadLength,
         }),
       );
-      const head = await target.client.send(
-        new HeadObjectCommand({ Bucket: target.bucketName, Key: key }),
-      );
-      const sizeBytes = head.ContentLength;
-      if (sizeBytes === undefined || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
-        await deleteB2Object(key);
-        return json({ error: "B2 did not return a valid object size after upload." }, 502);
-      }
-      if (sizeBytes !== uploadLength) {
-        await deleteB2Object(key);
-        return json({ error: "The uploaded B2 object size did not match the request." }, 502);
-      }
       return json(
         {
           storageKey: key,
           bucketId: target.bucketMarker,
-          sizeBytes,
-          mimeType: head.ContentType || mimeType,
+          sizeBytes: uploadLength,
+          mimeType,
         },
         201,
       );
@@ -262,6 +249,44 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
     return json({ error: "Method not allowed." }, 405);
   } catch (error) {
     return storageError(error);
+  }
+}
+
+async function routePasskey(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") {
+    return json({ error: "Method not allowed." }, 405);
+  }
+  const supabaseUrl = env.SUPABASE_URL?.trim().replace(/\/+$/, "");
+  const anonKey = env.SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !anonKey) {
+    return json({ error: "Passkey authentication is not configured." }, 503);
+  }
+
+  const headers = new Headers({
+    apikey: anonKey,
+    "content-type": request.headers.get("content-type") ?? "application/json",
+  });
+  const authorization = request.headers.get("authorization");
+  if (authorization) headers.set("authorization", authorization);
+
+  try {
+    const upstream = await fetch(`${supabaseUrl}/functions/v1/passkey-auth`, {
+      method: "POST",
+      headers,
+      body: request.body,
+      redirect: "manual",
+    });
+    const responseHeaders = new Headers();
+    const contentType = upstream.headers.get("content-type");
+    if (contentType) responseHeaders.set("content-type", contentType);
+    responseHeaders.set("cache-control", "no-store");
+    return new Response(upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: responseHeaders,
+    });
+  } catch {
+    return json({ error: "Passkey authentication service is unavailable." }, 502);
   }
 }
 
@@ -310,6 +335,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     if (pathname === "/api/healthz") return json({ status: "ok" });
+    if (pathname === "/api/passkey-auth") return routePasskey(request, env);
     if (pathname.startsWith("/api/b2/")) return routeB2(request, env);
     if (pathname.startsWith("/api/")) return json({ error: "Not found." }, 404);
     return fetchAssets(request, env);

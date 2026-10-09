@@ -26,3 +26,15 @@ The local Wrangler Workerd binary did not support the project's current compatib
 **Why:** Local Workerd lagged the project's compatibility date even though the remote deployment accepted it.
 
 **How to apply:** Use a command-line compatibility-date override only for local `wrangler dev` tests when needed.
+
+The browser's passkey call to the Supabase Edge Function failed its CORS origin check even though server-side calls succeeded. Proxy passkey requests through the same-origin Worker, add the Worker-held anon key upstream, and forward only the user's authorization header when present.
+
+**Why:** Browser preflight did not allow the production app origin, causing a generic “Load failed” before passkey authentication started.
+
+**How to apply:** For this Worker-hosted customer app, use a same-origin API route for passkey Edge Function calls; keep Supabase settings unchanged.
+
+Avoid `HeadObject` after a successful B2 upload when the key may be write-scoped; it adds an unnecessary read permission requirement to file creation.
+
+**Why:** A post-upload permission failure can turn a successful `PutObject` into a generic storage failure and trigger cleanup.
+
+**How to apply:** Use the measured request length for the upload response; reserve `HeadObject` for reads that actually need object metadata.
