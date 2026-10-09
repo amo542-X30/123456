@@ -265,6 +265,7 @@ async function routePasskey(request: Request, env: Env): Promise<Response> {
   const headers = new Headers({
     apikey: anonKey,
     "content-type": request.headers.get("content-type") ?? "application/json",
+    origin: new URL(request.url).origin,
   });
   const authorization = request.headers.get("authorization");
   if (authorization) headers.set("authorization", authorization);

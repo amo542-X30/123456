@@ -81,6 +81,7 @@ async function initializeTarget(environment: B2StorageEnvironment): Promise<B2Ta
     region,
     forcePathStyle: true,
     maxAttempts: 3,
+    requestChecksumCalculation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: applicationKeyId,
       secretAccessKey: applicationKey,
