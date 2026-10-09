@@ -27,8 +27,6 @@ export function PhotoViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTap = useRef(0);
-  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTouch = useRef(false);
 
   const zoom = useRef({
@@ -109,8 +107,6 @@ export function PhotoViewer({
   useEffect(() => {
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
-      if (tapTimer.current) clearTimeout(tapTimer.current);
-      if (clickTimer.current) clearTimeout(clickTimer.current);
     };
   }, []);
 
@@ -209,31 +205,22 @@ export function PhotoViewer({
       const absDx = Math.abs(dx);
       const absDy = Math.abs(dy);
 
+      const isTap = !sw.moved && absDx < 10 && absDy < 10;
+      if (isTap) revealControls();
+
       if (z.scale <= 1) {
         if (sw.active && absDx > 60 && absDx > absDy) {
           if (dx > 0 && currentIndex > 0) onIndexChange(currentIndex - 1);
           else if (dx < 0 && currentIndex < photos.length - 1) onIndexChange(currentIndex + 1);
           else snapBack();
-        } else if (!sw.moved && absDx < 10 && absDy < 10) {
+        } else if (isTap) {
           const now = Date.now();
           if (now - lastTap.current < 280) {
-            if (tapTimer.current) { clearTimeout(tapTimer.current); tapTimer.current = null; }
             if (z.scale > 1) resetZoom();
             else zoomTo(2);
             lastTap.current = 0;
           } else {
             lastTap.current = now;
-            tapTimer.current = setTimeout(() => {
-              setShowControls(prev => {
-                if (prev) {
-                  if (hideTimer.current) clearTimeout(hideTimer.current);
-                  return false;
-                }
-                scheduleHide();
-                return true;
-              });
-              tapTimer.current = null;
-            }, 280);
           }
         } else {
           snapBack();
@@ -264,23 +251,11 @@ export function PhotoViewer({
 
     const onClick = () => {
       if (isTouch.current) return;
-      if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; return; }
-      clickTimer.current = setTimeout(() => {
-        setShowControls(prev => {
-          if (prev) {
-            if (hideTimer.current) clearTimeout(hideTimer.current);
-            return false;
-          }
-          scheduleHide();
-          return true;
-        });
-        clickTimer.current = null;
-      }, 250);
+      revealControls();
     };
 
     const onDoubleClick = () => {
       if (isTouch.current) return;
-      if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; }
       if (z.scale > 1) resetZoom();
       else zoomTo(2);
     };
@@ -318,7 +293,7 @@ export function PhotoViewer({
       el.removeEventListener('click', onClick);
       el.removeEventListener('dblclick', onDoubleClick);
     };
-  }, [applyTransform, currentIndex, photos.length, onIndexChange, resetZoom, zoomTo, scheduleHide]);
+  }, [applyTransform, currentIndex, photos.length, onIndexChange, resetZoom, zoomTo, revealControls]);
 
   if (!file) return null;
 
