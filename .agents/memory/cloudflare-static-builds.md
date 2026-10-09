@@ -8,3 +8,9 @@ Cloudflare Workers Builds do not inherit Replit Secrets. For this app, build in 
 **Why:** Cloudflare's remote build environment cannot read Replit Secrets. A full workspace install also hit a firewall 403 on an unrelated API dependency, and the latest Wrangler release rejected the project's Node 20 runtime.
 
 **How to apply:** Require and pass the Replit `VITE_*` values into the filtered customer build, keep its lockfile frozen, then deploy the result with Wrangler. Check Wrangler's `engines.node` before upgrades; use Node 22+ if moving to a newer Wrangler release.
+
+`VITE_APP_URL` may be configured in Replit's production environment while absent from the development shell used for a local Cloudflare build. A production-scoped value does not satisfy the development build; setting it in shared scope can conflict with the production entry.
+
+**Why:** The Cloudflare build failed its explicit `VITE_APP_URL` requirement despite the correct production value already being configured.
+
+**How to apply:** Preserve the production value and set the same public origin in the development environment for local builds.
