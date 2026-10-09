@@ -613,6 +613,7 @@ function FileRow({
         .then((url) => {
           if (cancelled) return;
           if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+        setThumbError(false);
           setThumbUrl(url);
         })
         .catch(() => {
