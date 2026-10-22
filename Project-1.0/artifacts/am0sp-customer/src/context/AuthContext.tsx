@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { Session, User } from '@supabase/supabase-js';
+import type { Session, User 
+          } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { recordDeviceLogin, logSecurityEvent } from '@/lib/securityService';
 import { getDeviceName } from '@/lib/utils';

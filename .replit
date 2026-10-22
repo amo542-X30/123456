@@ -31,3 +31,14 @@ VITE_APP_URL = "https://project-1-0.amo5420000.workers.dev"
 [userenv.development]
 VITE_APP_URL = "https://project-1-0.amo5420000.workers.dev"
 
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3000
+
+[[ports]]
+localPort = 8081
+

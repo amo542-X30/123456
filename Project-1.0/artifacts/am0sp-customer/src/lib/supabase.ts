@@ -12,26 +12,26 @@ declare global {
 const runtimeConfig = typeof window !== 'undefined' ? window.__AM0SP_SUPABASE_CONFIG__ : undefined;
 const usesWorkerSupabaseConfig =
   import.meta.env.VITE_SUPABASE_ANON_KEY === '__WORKER_SUPABASE_ANON_KEY__';
-const supabaseUrl =
+export const SUPABASE_URL =
   runtimeConfig?.url?.trim() ??
   (usesWorkerSupabaseConfig ? '' : import.meta.env.VITE_SUPABASE_URL?.trim() ?? '');
-const supabaseAnonKey =
+export const SUPABASE_ANON_KEY =
   runtimeConfig?.anonKey?.trim() ??
   (usesWorkerSupabaseConfig ? '' : import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '');
 
 const isValidSupabaseUrl = (() => {
   try {
-    const url = new URL(supabaseUrl);
+    const url = new URL(SUPABASE_URL);
     return url.protocol === 'https:' || url.protocol === 'http:';
   } catch {
     return false;
   }
 })();
 
-export const isSupabaseConfigured = Boolean(isValidSupabaseUrl && supabaseAnonKey);
+export const isSupabaseConfigured = Boolean(isValidSupabaseUrl && SUPABASE_ANON_KEY);
 
 const configuredClient = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,

@@ -1,10 +1,7 @@
-import { supabase } from './supabase';
+import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from './supabase';
 import { isB2StorageBucket, storageProvider } from './storage';
 import { getFileCategory } from './utils';
 import type { FileItem, FileCategory, StorageStats } from './types';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 async function getCurrentUser() {
   const { data: { session } } = await supabase.auth.getSession();
