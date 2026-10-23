@@ -711,6 +711,20 @@ function FileRow({
 function VideoPosterThumbnail({ src, onError }: { src: string; onError: () => void }) {
   const [poster, setPoster] = useState<string | null>(null);
   const posterTime = useRef(0);
+  const hasLoadedFrame = useRef(false);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  useEffect(() => {
+    hasLoadedFrame.current = false;
+    const timeoutId = setTimeout(() => {
+      if (!hasLoadedFrame.current) onErrorRef.current();
+    }, 10000);
+    return () => clearTimeout(timeoutId);
+  }, [src]);
 
   const capturePoster = (video: HTMLVideoElement) => {
     if (poster || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
@@ -763,6 +777,7 @@ function VideoPosterThumbnail({ src, onError }: { src: string; onError: () => vo
         }
       }}
       onLoadedData={(event) => {
+        hasLoadedFrame.current = true;
         if (posterTime.current === 0) capturePoster(event.currentTarget);
       }}
       onSeeked={(event) => capturePoster(event.currentTarget)}
@@ -1166,7 +1181,7 @@ function FileViewer({
     } else {
       setImgError(true);
       if (file.category === 'video') {
-        const video = document.querySelector('video');
+        const video = document.querySelector<HTMLVideoElement>('[data-file-preview-video]');
         if (video && video.error) {
           const code = video.error.code;
           const msgs: Record<number, string> = {

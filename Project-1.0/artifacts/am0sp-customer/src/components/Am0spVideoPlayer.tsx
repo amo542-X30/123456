@@ -591,12 +591,12 @@ export function Am0spVideoPlayer({ src, fileName, mimeType, fileId, onError, onS
       >
         <video
           ref={videoRef}
+          data-file-preview-video
           src={src}
           autoPlay
           playsInline
           className="max-w-full max-h-full"
           style={{ objectFit: 'contain' }}
-          onError={onError}
         >
           {subtitleUrl && (
             <track
