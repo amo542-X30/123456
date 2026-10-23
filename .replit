@@ -31,6 +31,9 @@ VITE_APP_URL = "https://project-1-0.amo5420000.workers.dev"
 [userenv.development]
 VITE_APP_URL = "https://project-1-0.amo5420000.workers.dev"
 
+[userenv.shared]
+B2_BUCKET_NAME = "am0sp-vault"
+
 [[ports]]
 localPort = 5000
 externalPort = 80

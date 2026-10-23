@@ -9,6 +9,8 @@ import {
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { Readable } from "node:stream";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 type B2Authorization = {
   apiInfo?: {
@@ -140,12 +142,20 @@ export async function uploadB2Object(options: {
   contentLength?: number;
 }, environment: B2StorageEnvironment = process.env): Promise<{ bucketMarker: string; sizeBytes: number; mimeType: string }> {
   const target = await getB2Target(environment);
+  let sizeBytes = 0;
+  const countedBody = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      sizeBytes += chunk.byteLength;
+      callback(null, chunk);
+    },
+  });
+  const requestBody = pipeline(options.body, countedBody);
   const upload = new Upload({
     client: target.client,
     params: {
       Bucket: target.bucketName,
       Key: options.key,
-      Body: options.body,
+      Body: countedBody,
       ContentType: options.contentType,
       ...(options.contentLength === undefined ? {} : { ContentLength: options.contentLength }),
     },
@@ -154,39 +164,19 @@ export async function uploadB2Object(options: {
     leavePartsOnError: false,
   });
 
-  await upload.done();
-
   try {
-    const head = await target.client.send(
-      new HeadObjectCommand({
-        Bucket: target.bucketName,
-        Key: options.key,
-      }),
-    );
-    const sizeBytes = head.ContentLength;
-    if (sizeBytes === undefined || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
-      throw new Error("B2 did not return a valid object size after upload.");
-    }
-    if (options.contentLength !== undefined && sizeBytes !== options.contentLength) {
-      throw new Error("The uploaded B2 object size did not match the request.");
-    }
-
-    return {
-      bucketMarker: target.bucketMarker,
-      sizeBytes,
-      mimeType: head.ContentType || options.contentType,
-    };
-  } catch (verificationError) {
-    try {
-      await deleteB2Object(options.key, environment);
-    } catch (cleanupError) {
-      throw new AggregateError(
-        [verificationError, cleanupError],
-        "B2 upload verification failed and the object could not be cleaned up.",
-      );
-    }
-    throw verificationError;
+    await Promise.all([requestBody, upload.done()]);
+  } catch (error) {
+    countedBody.destroy(error instanceof Error ? error : new Error("B2 upload failed."));
+    await requestBody.catch(() => undefined);
+    throw error;
   }
+
+  return {
+    bucketMarker: target.bucketMarker,
+    sizeBytes,
+    mimeType: options.contentType,
+  };
 }
 
 export async function getB2Object(options: {

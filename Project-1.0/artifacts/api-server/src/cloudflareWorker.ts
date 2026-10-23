@@ -17,6 +17,8 @@ interface Env extends B2StorageEnvironment {
   ASSETS: { fetch(request: Request): Promise<Response> };
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
+  VITE_SUPABASE_URL?: string;
+  VITE_SUPABASE_ANON_KEY?: string;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -34,13 +36,21 @@ function attachmentDisposition(fileName: string): string {
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
+function getSupabaseConfig(env: Env): { url: string; anonKey: string } {
+  return {
+    url: (env.SUPABASE_URL ?? env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, ""),
+    anonKey: (env.SUPABASE_ANON_KEY ?? env.VITE_SUPABASE_ANON_KEY ?? "").trim(),
+  };
+}
+
 async function requireUserId(request: Request, env: Env): Promise<string | Response> {
   const authorization = request.headers.get("authorization");
   const match = authorization?.match(/^Bearer\s+(.+)$/i);
   if (!match) return json({ error: "A valid customer session is required." }, 401);
 
-  const supabaseUrl = env.SUPABASE_URL?.trim().replace(/\/+$/, "");
-  const anonKey = env.SUPABASE_ANON_KEY?.trim();
+  const { url: supabaseUrl } = getSupabaseConfig(env);
+  const anonKey =
+    request.headers.get("apikey")?.trim() || getSupabaseConfig(env).anonKey;
   if (!supabaseUrl || !anonKey) {
     return json({ error: "Customer session validation is not configured." }, 503);
   }
@@ -169,7 +179,10 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
     if (request.method === "POST") {
       const rawLength = request.headers.get("content-length");
       const contentLength = rawLength === null ? undefined : Number(rawLength);
-      if (contentLength !== undefined && (!Number.isSafeInteger(contentLength) || contentLength < 0)) {
+      if (contentLength === undefined) {
+        return json({ error: "Upload size is required for a safe B2 upload." }, 411);
+      }
+      if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
         return json({ error: "Invalid upload length." }, 400);
       }
       const rawMimeType = (request.headers.get("x-file-content-type") ?? "")
@@ -179,21 +192,12 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
       const mimeType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(rawMimeType)
         ? rawMimeType
         : "application/octet-stream";
-      // B2's S3 endpoint needs a known payload length. Preserve streaming for normal
-      // browser uploads, but calculate the length when an intermediary omitted it.
       const body =
         request.body ??
         (contentLength === 0 ? new Uint8Array() : undefined);
       if (!body) return json({ error: "Upload body is required." }, 400);
-      let uploadBody: Uint8Array | ReadableStream<Uint8Array>;
-      let uploadLength: number;
-      if (contentLength === undefined) {
-        uploadBody = new Uint8Array(await new Response(body).arrayBuffer());
-        uploadLength = uploadBody.byteLength;
-      } else {
-        uploadBody = body as ReadableStream<Uint8Array>;
-        uploadLength = contentLength;
-      }
+      const uploadBody = body as Uint8Array | ReadableStream<Uint8Array>;
+      const uploadLength = contentLength;
       const target = await getB2Target(env);
       await target.client.send(
         new PutObjectCommand({
@@ -256,8 +260,7 @@ async function routePasskey(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed." }, 405);
   }
-  const supabaseUrl = env.SUPABASE_URL?.trim().replace(/\/+$/, "");
-  const anonKey = env.SUPABASE_ANON_KEY?.trim();
+  const { url: supabaseUrl, anonKey } = getSupabaseConfig(env);
   if (!supabaseUrl || !anonKey) {
     return json({ error: "Passkey authentication is not configured." }, 503);
   }
@@ -303,8 +306,7 @@ async function fetchAssets(request: Request, env: Env): Promise<Response> {
     return assetResponse;
   }
 
-  const supabaseUrl = env.SUPABASE_URL?.trim().replace(/\/+$/, "");
-  const anonKey = env.SUPABASE_ANON_KEY?.trim();
+  const { url: supabaseUrl, anonKey } = getSupabaseConfig(env);
   if (!supabaseUrl || !anonKey) {
     return json({ error: "Customer authentication is not configured." }, 503);
   }

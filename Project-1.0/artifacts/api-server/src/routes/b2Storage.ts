@@ -37,6 +37,7 @@ async function requireUserId(req: Request, res: Response): Promise<string | null
     ""
   ).trim().replace(/\/+$/, "");
   const anonKey = (
+    req.get("apikey") ??
     process.env.VITE_SUPABASE_ANON_KEY ??
     process.env.SUPABASE_ANON_KEY ??
     ""

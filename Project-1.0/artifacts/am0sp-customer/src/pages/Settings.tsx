@@ -456,11 +456,11 @@ function StorageTab() {
 
             <div className="mt-4 p-3 rounded-lg bg-vault-900/50 border border-vault-600/30">
               <p className="terminal-text leading-relaxed">
-                <span className="text-cyber-green/60">{'>'}</span> Provider: Supabase Storage (connected)
+                <span className="text-cyber-green/60">{'>'}</span> New uploads: Backblaze B2 (private)
                 <br />
-                <span className="text-cyber-green/60">{'>'}</span> Bucket: {STORAGE_BUCKET} (private, RLS-enforced)
+                <span className="text-cyber-green/60">{'>'}</span> Existing files: Supabase Storage ({STORAGE_BUCKET}, private)
                 <br />
-                <span className="text-cyber-green/60">{'>'}</span> Max file size: 50MB per upload (Supabase plan limit — resumable uploads support larger files)
+                <span className="text-cyber-green/60">{'>'}</span> New B2 uploads do not use Supabase's 50MB Storage limit
                 <br />
                 <span className="text-cyber-green/60">{'>'}</span> No fixed storage quota — actual usage shown above
                 <br />
