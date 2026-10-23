@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from './supabase';
+import { supabase, SUPABASE_ANON_KEY } from './supabase';
 import { isB2StorageBucket, storageProvider } from './storage';
 import { getFileCategory } from './utils';
 import type { FileItem, FileCategory, StorageStats } from './types';
@@ -19,10 +19,6 @@ async function waitForUser(maxWaitMs: number = 3000): Promise<string> {
   }
   if (!user) throw new Error('Not authenticated');
   return user.id;
-}
-
-function getMediaProxyUrl(fileId: string, action: 'proxy' | 'download' | 'inspect' | 'signed'): string {
-  return `${SUPABASE_URL}/functions/v1/media-proxy/${action}/${fileId}`;
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -288,36 +284,15 @@ export async function permanentDeleteFile(file: FileItem): Promise<void> {
 }
 
 export async function getFileUrl(file: FileItem): Promise<string> {
-  if (isB2StorageBucket(file.bucket_id)) {
-    return storageProvider.getSignedUrl(file.storage_key, 3600, file.bucket_id);
-  }
-
-  if (file.category === 'video') {
-    const headers = await getAuthHeaders();
-    const resp = await fetch(getMediaProxyUrl(file.id, 'signed'), { headers });
-    if (!resp.ok) throw new Error(`Failed to get video URL: ${resp.status}`);
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
-    return data.signedUrl;
-  }
-  return storageProvider.getBlobUrl(file.storage_key, file.bucket_id);
+  return storageProvider.getSignedUrl(file.storage_key, 3600, file.bucket_id);
 }
 
 export async function getStreamingUrl(file: FileItem): Promise<string> {
-  if (isB2StorageBucket(file.bucket_id)) {
-    return storageProvider.getSignedUrl(file.storage_key, 3600, file.bucket_id);
-  }
-
-  const headers = await getAuthHeaders();
-  const resp = await fetch(getMediaProxyUrl(file.id, 'signed'), { headers });
-  if (!resp.ok) throw new Error(`Failed to get streaming URL: ${resp.status}`);
-  const data = await resp.json();
-  if (data.error) throw new Error(data.error);
-  return data.signedUrl;
+  return storageProvider.getSignedUrl(file.storage_key, 3600, file.bucket_id);
 }
 
 export async function getThumbnailUrl(file: FileItem): Promise<string> {
-  return storageProvider.getBlobUrl(file.storage_key, file.bucket_id);
+  return storageProvider.getSignedUrl(file.storage_key, 3600, file.bucket_id);
 }
 
 export interface DownloadProgress {
@@ -388,55 +363,55 @@ function triggerNativeDownload(url: string, fileName: string): void {
   document.body.removeChild(a);
 }
 
+function isIOSBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 export async function downloadFile(
   file: FileItem,
   onProgress?: (p: DownloadProgress) => void,
 ): Promise<void> {
-  const headers = await getAuthHeaders();
+  const isIOS = isIOSBrowser();
+  // Open synchronously from the click handler; Safari can block a new tab
+  // opened only after the signed-URL request completes.
+  const iosWindow = isIOS ? window.open('about:blank', '_blank') : null;
   const isB2File = isB2StorageBucket(file.bucket_id);
-  let signedData: {
-    signedUrl: string;
-    fileName?: string;
-    mimeType?: string;
-    size?: number;
-  };
-
-  if (isB2File) {
-    signedData = {
-      signedUrl: await storageProvider.getSignedUrl(
-        file.storage_key,
-        3600,
-        file.bucket_id,
-        file.original_name,
-      ),
-      fileName: file.original_name,
-      mimeType: file.mime_type,
-      size: file.size_bytes,
-    };
-  } else {
-    const signedResp = await fetch(getMediaProxyUrl(file.id, 'signed'), { headers });
-    if (!signedResp.ok) {
-      let errMsg = `Download failed: ${signedResp.status}`;
-      try { const e = await signedResp.json(); if (e.error) errMsg = e.error; } catch { /* Non-JSON responses retain the HTTP status error. */ }
-      throw new Error(errMsg);
-    }
-    signedData = await signedResp.json();
-    if ('error' in signedData && signedData.error) throw new Error(String(signedData.error));
+  let signedUrl: string;
+  try {
+    signedUrl = await storageProvider.getSignedUrl(
+      file.storage_key,
+      3600,
+      file.bucket_id,
+      file.original_name,
+    );
+  } catch (error) {
+    iosWindow?.close();
+    throw error;
   }
 
-  const fileName = signedData.fileName || file.original_name;
-  const mimeType = signedData.mimeType || file.mime_type || 'application/octet-stream';
-  const totalSize = signedData.size || file.size_bytes || 0;
-  const signedUrl = signedData.signedUrl;
-
-  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const fileName = file.original_name;
+  const mimeType = file.mime_type || 'application/octet-stream';
+  const totalSize = file.size_bytes || 0;
   const isSmallFile = totalSize > 0 && totalSize < SMALL_FILE_THRESHOLD;
+
+  if (isIOS) {
+    onProgress?.({ loaded: 0, total: totalSize, percent: null });
+    if (iosWindow && !iosWindow.closed) {
+      iosWindow.location.replace(signedUrl);
+    } else {
+      window.location.assign(signedUrl);
+    }
+    return;
+  }
 
   if (isSmallFile) {
     const downloadUrl = isB2File
       ? storageProvider.getB2ObjectUrl(file.storage_key, fileName)
       : signedUrl;
-    const { promise: blobPromise } = fetchWithProgress(downloadUrl, isB2File ? headers : {}, (p) => {
+    const headers = isB2File ? await getAuthHeaders() : {};
+    const { promise: blobPromise } = fetchWithProgress(downloadUrl, headers, (p) => {
       if (onProgress) {
         onProgress({ loaded: p.loaded, total: p.total || totalSize, percent: p.percent });
       }
@@ -471,10 +446,7 @@ export async function downloadFile(
   // attachment disposition so cross-origin navigation still downloads the file.
   onProgress?.({ loaded: 0, total: totalSize, percent: null });
 
-  const downloadUrl = isB2File
-    ? signedUrl
-    : signedUrl + (signedUrl.includes('?') ? '&' : '?') + 'download=' + encodeURIComponent(fileName);
-  triggerNativeDownload(downloadUrl, fileName);
+  triggerNativeDownload(signedUrl, fileName);
 }
 
 export interface VideoInspectResult {
@@ -511,16 +483,71 @@ export async function inspectVideo(fileId: string): Promise<VideoInspectResult> 
     };
   }
 
-  const headers = await getAuthHeaders();
-  const resp = await fetch(getMediaProxyUrl(fileId, 'inspect'), { headers });
-  if (!resp.ok) {
-    let errMsg = `Inspect failed: ${resp.status}`;
-    try { const e = await resp.json(); if (e.error) errMsg = e.error; } catch { /* Non-JSON responses retain the HTTP status error. */ }
-    throw new Error(errMsg);
+  if (!fileRecord) throw new Error('Video file not found.');
+
+  const signedUrl = await storageProvider.getSignedUrl(
+    fileRecord.storage_key,
+    60,
+    fileRecord.bucket_id,
+  );
+  const inspectResponse = await fetch(signedUrl, {
+    headers: { Range: 'bytes=0-262143' },
+  });
+  if (!inspectResponse.ok && inspectResponse.status !== 206) {
+    throw new Error(`Inspect failed: ${inspectResponse.status}`);
   }
-  const data = await resp.json();
-  if (data.error) throw new Error(data.error);
-  return data as VideoInspectResult;
+  const bytes = new Uint8Array(await inspectResponse.arrayBuffer());
+  const atoms: Record<string, unknown> = {};
+  let offset = 0;
+  let moovFound = false;
+  let mdatFound = false;
+
+  while (offset < bytes.length - 8) {
+    const size = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+    const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    if (size < 8 || offset + size > bytes.length) {
+      atoms[type] = { offset, size, truncated: true };
+      break;
+    }
+    if (type === 'ftyp') {
+      const brand = String.fromCharCode(bytes[offset + 8], bytes[offset + 9], bytes[offset + 10], bytes[offset + 11]);
+      atoms.ftyp = { brand, offset };
+    } else if (type === 'moov') {
+      moovFound = true;
+      atoms.moov = { offset, size };
+    } else if (type === 'mdat') {
+      mdatFound = true;
+      atoms.mdat = { offset, size };
+      break;
+    } else {
+      atoms[type] = { offset, size };
+    }
+    offset += size;
+  }
+
+  const text = new TextDecoder().decode(bytes);
+  const codecInfo: { found?: string } = {};
+  for (const codec of ['avc1', 'hvc1', 'hev1', 'mp4a', 'av01', 'vp09', 'vp08', 'ac-3', 'ec-3', 'AAC']) {
+    if (text.includes(codec)) {
+      codecInfo.found = codec;
+      break;
+    }
+  }
+
+  const moovOffset = (atoms.moov as { offset?: number } | undefined)?.offset;
+  const mdatOffset = (atoms.mdat as { offset?: number } | undefined)?.offset;
+  return {
+    fileId,
+    fileName: fileRecord.original_name,
+    mimeType: fileRecord.mime_type,
+    size: fileRecord.size_bytes,
+    codec: codecInfo,
+    moovBeforeMdat: moovFound && (!mdatFound || (moovOffset !== undefined && mdatOffset !== undefined && moovOffset < mdatOffset)),
+    moovFound,
+    mdatFound,
+    atoms,
+    headerBytesRead: bytes.length,
+  };
 }
 
 export async function emptyTrash(): Promise<void> {

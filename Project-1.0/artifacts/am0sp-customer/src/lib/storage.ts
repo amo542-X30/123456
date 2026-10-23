@@ -1,4 +1,5 @@
-import { supabase, STORAGE_BUCKET } from './supabase';
+import { Upload } from 'tus-js-client';
+import { supabase, STORAGE_BUCKET, SUPABASE_ANON_KEY, SUPABASE_URL } from './supabase';
 import type { FileCategory } from './types';
 
 export interface UploadResult {
@@ -9,6 +10,9 @@ export interface UploadResult {
 }
 
 const API_BASE_URL = `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`;
+const TUS_ENDPOINT = `${SUPABASE_URL.replace(/\/+$/, '')}/storage/v1/upload/resumable`;
+const TUS_THRESHOLD_BYTES = 6 * 1024 * 1024;
+const TUS_CHUNK_SIZE = 6 * 1024 * 1024;
 
 export function isB2StorageBucket(bucketId: string | null | undefined): boolean {
   return bucketId?.startsWith('b2:') ?? false;
@@ -22,9 +26,14 @@ function fileIdFromStorageKey(storageKey: string): string {
   return fileId;
 }
 
-async function getSessionHeaders(): Promise<Record<string, string>> {
+async function getActiveSession() {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error('An active session is required for B2 storage.');
+  if (!session?.access_token) throw new Error('An active session is required for private storage.');
+  return session;
+}
+
+async function getSessionHeaders(): Promise<Record<string, string>> {
+  const session = await getActiveSession();
   return { Authorization: `Bearer ${session.access_token}` };
 }
 
@@ -50,59 +59,87 @@ export class StorageProvider {
   ): Promise<UploadResult> {
     const storageKey = `${userId}/${fileId}`;
     const mimeType = contentType?.trim() || file.type || 'application/octet-stream';
+    if (!(await this.verifyFileOwnership(storageKey))) {
+      throw new Error('Access denied: upload path does not belong to current user');
+    }
 
-    return new Promise<UploadResult>((resolve, reject) => {
-      void getSessionHeaders().then((headers) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${API_BASE_URL}/b2/objects/${encodeURIComponent(fileId)}`);
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-        xhr.setRequestHeader('X-File-Content-Type', mimeType);
-        for (const [name, value] of Object.entries(headers)) {
-          xhr.setRequestHeader(name, value);
+    if (file.size > TUS_THRESHOLD_BYTES) {
+      await this.uploadResumable(storageKey, userId, fileId, file, mimeType, onProgress);
+    } else {
+      onProgress?.(0);
+      const { error } = await supabase.storage
+        .from(this.bucket)
+        .upload(storageKey, file, {
+          cacheControl: '3600',
+          contentType: mimeType,
+          upsert: false,
+        });
+      if (error) throw new Error(`Supabase upload failed: ${error.message}`);
+      onProgress?.(100);
+    }
+
+    return {
+      storageKey,
+      bucketId: this.bucket,
+      sizeBytes: file.size,
+      mimeType,
+    };
+  }
+
+  private async uploadResumable(
+    storageKey: string,
+    userId: string,
+    fileId: string,
+    file: File,
+    mimeType: string,
+    onProgress?: (progress: number) => void,
+  ): Promise<void> {
+    await getActiveSession();
+
+    await new Promise<void>((resolve, reject) => {
+      const upload = new Upload(file, {
+        endpoint: TUS_ENDPOINT,
+        uploadSize: file.size,
+        chunkSize: TUS_CHUNK_SIZE,
+        retryDelays: [0, 1000, 3000, 5000, 10000],
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        headers: { apikey: SUPABASE_ANON_KEY },
+        metadata: {
+          bucketName: this.bucket,
+          objectName: storageKey,
+          contentType: mimeType,
+          cacheControl: '3600',
+        },
+        fingerprint: async (source) =>
+          `am0sp:${userId}:${fileId}:${source.size}:${source.lastModified}`,
+        onBeforeRequest: async (request) => {
+          const session = await getActiveSession();
+          request.setHeader('Authorization', `Bearer ${session.access_token}`);
+          request.setHeader('apikey', SUPABASE_ANON_KEY);
+        },
+        onProgress: (bytesSent, bytesTotal) => {
+          if (bytesTotal > 0) {
+            onProgress?.(Math.min(99, Math.round((bytesSent / bytesTotal) * 100)));
+          }
+        },
+        onError: (error) => reject(new Error(`Resumable upload failed: ${error.message}`)),
+        onSuccess: () => {
+          onProgress?.(100);
+          resolve();
+        },
+      });
+
+      const startUpload = (previousUploads: Awaited<ReturnType<typeof upload.findPreviousUploads>>) => {
+        try {
+          if (previousUploads[0]) upload.resumeFromPreviousUpload(previousUploads[0]);
+          upload.start();
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error('Unable to start resumable upload.'));
         }
+      };
 
-        xhr.upload.onprogress = (event) => {
-          if (onProgress) {
-            const pct = event.lengthComputable && event.total > 0
-              ? Math.round((event.loaded / event.total) * 100)
-              : 0;
-            onProgress(pct);
-          }
-        };
-
-        xhr.onerror = () => reject(new Error('Network error during B2 upload.'));
-        xhr.onabort = () => reject(new DOMException('Upload aborted.', 'AbortError'));
-        xhr.onload = () => {
-          if (xhr.status < 200 || xhr.status >= 300) {
-            let message = `B2 upload failed (${xhr.status})`;
-            try {
-              const response = JSON.parse(xhr.responseText) as { error?: unknown };
-              if (typeof response.error === 'string') message = response.error;
-            } catch {
-              // Keep the status-based message for non-JSON responses.
-            }
-            reject(new Error(message));
-            return;
-          }
-
-          try {
-            const result = JSON.parse(xhr.responseText) as UploadResult;
-            if (
-              result.storageKey !== storageKey ||
-              !isB2StorageBucket(result.bucketId) ||
-              result.sizeBytes !== file.size
-            ) {
-              reject(new Error('B2 returned an invalid upload result.'));
-              return;
-            }
-            resolve({ ...result, mimeType });
-          } catch {
-            reject(new Error('B2 returned an invalid upload response.'));
-          }
-        };
-
-        xhr.send(file);
-      }).catch(reject);
+      void upload.findPreviousUploads().then(startUpload).catch(() => startUpload([]));
     });
   }
 
@@ -170,7 +207,7 @@ export class StorageProvider {
 
     const { data, error } = await supabase.storage
       .from(this.bucket)
-      .createSignedUrl(storageKey, expiresIn);
+      .createSignedUrl(storageKey, expiresIn, downloadName ? { download: downloadName } : undefined);
 
     if (error) {
       throw new Error(`Failed to generate signed URL: ${error.message}`);
