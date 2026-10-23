@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   getFiles, uploadFile, renameFile, toggleFavorite, moveFile,
@@ -595,37 +595,27 @@ function FileRow({
     }
     setThumbError(false);
     let cancelled = false;
-    let objectUrl: string | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    if (file.category === 'photo') {
-      getThumbnailUrl(file)
-        .then((url) => {
-          if (cancelled) { URL.revokeObjectURL(url); return; }
-          objectUrl = url;
-          setThumbUrl(url);
-        })
-        .catch(() => { if (!cancelled) setThumbError(true); });
-    } else {
+    if (file.category === 'video') {
       timeoutId = setTimeout(() => {
         if (!cancelled) setThumbError(true);
       }, 8000);
-      getStreamingUrl(file)
-        .then((url) => {
-          if (cancelled) return;
-          if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-        setThumbError(false);
-          setThumbUrl(url);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-          setThumbError(true);
-        });
     }
+    getThumbnailUrl(file)
+      .then((url) => {
+        if (cancelled) return;
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+        setThumbError(false);
+        setThumbUrl(url);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+        setThumbError(true);
+      });
     return () => {
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [file, isTrash, thumbRetry]);
 
@@ -662,22 +652,13 @@ function FileRow({
                 <span className="text-xl">{getFileIcon(file.category, file.mime_type)}</span>
               ) : thumbUrl ? (
                 file.category === 'video' ? (
-                  <video
-                    src={thumbUrl}
-                    muted
-                    playsInline
-                    preload="metadata"
-                    className="w-full h-full object-cover"
-                    onLoadedMetadata={(e) => {
-                      const v = e.currentTarget;
-                      if (v.duration > 0) v.currentTime = Math.min(0.1, v.duration / 2);
-                    }}
-                    onError={handleThumbError}
-                  />
+                  <VideoPosterThumbnail src={thumbUrl} onError={handleThumbError} />
                 ) : (
                   <img
                     src={thumbUrl}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover"
                     onError={handleThumbError}
                   />
@@ -724,6 +705,69 @@ function FileRow({
         />
       )}
     </div>
+  );
+}
+
+function VideoPosterThumbnail({ src, onError }: { src: string; onError: () => void }) {
+  const [poster, setPoster] = useState<string | null>(null);
+  const posterTime = useRef(0);
+
+  const capturePoster = (video: HTMLVideoElement) => {
+    if (poster || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    try {
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      if (!width || !height) return;
+
+      const scale = Math.min(1, 320 / width, 240 / height);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) return;
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      setPoster(canvas.toDataURL('image/jpeg', 0.78));
+    } catch {
+      // A browser may block canvas access to cross-origin media. Keep the
+      // loaded video frame visible as the thumbnail in that case.
+    }
+  };
+
+  return poster ? (
+    <img
+      src={poster}
+      alt=""
+      className="w-full h-full object-cover"
+      onError={onError}
+    />
+  ) : (
+    <video
+      src={src}
+      muted
+      playsInline
+      preload="metadata"
+      className="w-full h-full object-cover"
+      onLoadedMetadata={(event) => {
+        const video = event.currentTarget;
+        const duration = video.duration;
+        posterTime.current = Number.isFinite(duration) && duration > 0.1
+          ? Math.min(1, duration / 2)
+          : 0;
+        if (posterTime.current > 0) {
+          try {
+            video.currentTime = posterTime.current;
+          } catch {
+            capturePoster(video);
+          }
+        }
+      }}
+      onLoadedData={(event) => {
+        if (posterTime.current === 0) capturePoster(event.currentTarget);
+      }}
+      onSeeked={(event) => capturePoster(event.currentTarget)}
+      onError={onError}
+    />
   );
 }
 
@@ -1018,13 +1062,18 @@ function FileViewer({
   onFileChange: (file: FileItem) => void;
   onDownload: (file: FileItem) => void;
 }) {
-  const photos = allFiles.filter((f) => f.category === 'photo');
+  const photos = useMemo(() => allFiles.filter((f) => f.category === 'photo'), [allFiles]);
   const currentPhotoIdx = photos.findIndex((f) => f.id === file.id);
   const isPhoto = file.category === 'photo' && currentPhotoIdx >= 0;
 
-  const videos = allFiles.filter((f) => f.category === 'video');
+  const videos = useMemo(() => allFiles.filter((f) => f.category === 'video'), [allFiles]);
   const currentVideoIdx = videos.findIndex((f) => f.id === file.id);
   const isVideo = file.category === 'video' && currentVideoIdx >= 0;
+  const isTextPreview = file.category === 'document' && (
+    file.mime_type.startsWith('text/') ||
+    file.mime_type === 'application/json' ||
+    file.mime_type === 'application/xml'
+  );
 
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1036,38 +1085,41 @@ function FileViewer({
   const [inspecting, setInspecting] = useState(false);
   const [videoErrorMsg, setVideoErrorMsg] = useState<string | null>(null);
 
-  const urlCache = useRef<Map<string, string>>(new Map());
+  const urlCache = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
+  const signedUrlCacheTtlMs = 55 * 60 * 1000;
+
+  useEffect(() => {
+    setAutoRetried(false);
+    setVideoDiagnostics(null);
+    setVideoErrorMsg(null);
+  }, [file.id]);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     setImgError(false);
     let cancelled = false;
-    let objectUrl: string | null = null;
     const cache = urlCache.current;
 
     const cached = cache.get(file.id);
-    if (cached) {
-      setUrl(cached);
+    if (cached && cached.expiresAt > Date.now() + 60_000) {
+      setUrl(cached.url);
       setLoading(false);
       return;
     }
+    cache.delete(file.id);
 
     getFileUrl(file)
-      .then((blobUrl) => {
-        if (cancelled) { URL.revokeObjectURL(blobUrl); return; }
-        objectUrl = blobUrl;
-        cache.set(file.id, blobUrl);
-        setUrl(blobUrl);
+      .then((signedUrl) => {
+        if (cancelled) return;
+        cache.set(file.id, { url: signedUrl, expiresAt: Date.now() + signedUrlCacheTtlMs });
+        setUrl(signedUrl);
       })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load file'); })
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => {
       cancelled = true;
-      if (objectUrl && !cache.has(file.id)) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
   }, [file, manualRetry]);
 
@@ -1076,8 +1128,11 @@ function FileViewer({
       const next = photos[currentPhotoIdx + 1];
       const prev = photos[currentPhotoIdx - 1];
       for (const f of [prev, next]) {
-        if (f && !urlCache.current.has(f.id)) {
-          getFileUrl(f).then((u) => urlCache.current.set(f.id, u)).catch(() => {});
+        const cached = f ? urlCache.current.get(f.id) : undefined;
+        if (f && (!cached || cached.expiresAt <= Date.now() + 60_000)) {
+          getFileUrl(f).then((signedUrl) => {
+            urlCache.current.set(f.id, { url: signedUrl, expiresAt: Date.now() + signedUrlCacheTtlMs });
+          }).catch(() => {});
         }
       }
     }
@@ -1085,8 +1140,11 @@ function FileViewer({
       const next = videos[currentVideoIdx + 1];
       const prev = videos[currentVideoIdx - 1];
       for (const f of [prev, next]) {
-        if (f && !urlCache.current.has(f.id)) {
-          getFileUrl(f).then((u) => urlCache.current.set(f.id, u)).catch(() => {});
+        const cached = f ? urlCache.current.get(f.id) : undefined;
+        if (f && (!cached || cached.expiresAt <= Date.now() + 60_000)) {
+          getFileUrl(f).then((signedUrl) => {
+            urlCache.current.set(f.id, { url: signedUrl, expiresAt: Date.now() + signedUrlCacheTtlMs });
+          }).catch(() => {});
         }
       }
     }
@@ -1095,7 +1153,6 @@ function FileViewer({
   useEffect(() => {
     const cache = urlCache.current;
     return () => {
-      cache.forEach((u) => URL.revokeObjectURL(u));
       cache.clear();
     };
   }, []);
@@ -1318,10 +1375,10 @@ function FileViewer({
             {file.category === 'document' && file.mime_type === 'application/pdf' && (
               <iframe src={url} className="w-full flex-1 min-h-0 rounded-lg" title={file.original_name} />
             )}
-            {file.category === 'document' && file.mime_type.startsWith('text/') && (
+            {isTextPreview && (
               <TextPreview url={url} />
             )}
-            {(file.category === 'other' || (file.category === 'document' && file.mime_type !== 'application/pdf' && !file.mime_type.startsWith('text/'))) && (
+            {(file.category === 'other' || (file.category === 'document' && file.mime_type !== 'application/pdf' && !isTextPreview)) && (
               <div className="p-12 text-center">
                 <FileIcon className="w-12 h-12 text-vault-400 mx-auto mb-3" />
                 <p className="text-sm text-gray-300">Preview not available for this file type</p>
@@ -1341,15 +1398,41 @@ function FileViewer({
 function TextPreview({ url }: { url: string }) {
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(url)
-      .then((r) => r.text())
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    fetch(url, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Preview request failed (${response.status})`);
+        return response.text();
+      })
       .then(setContent)
-      .finally(() => setLoading(false));
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setError(err instanceof Error ? err.message : 'Unable to load this preview');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [url]);
 
   if (loading) return <div className="terminal-text p-8 text-center animate-pulse">LOADING…</div>;
+  if (error) {
+    return (
+      <div className="p-8 text-center">
+        <AlertCircle className="w-8 h-8 text-cyber-red mx-auto mb-2" />
+        <p className="text-sm text-gray-300 mb-2">Unable to load the text preview.</p>
+        <p className="terminal-text text-xs text-cyber-red mb-4">{error}</p>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs inline-flex">
+          Open file
+        </a>
+      </div>
+    );
+  }
   return (
     <pre className="p-4 text-xs text-gray-300 flex-1 min-h-0 overflow-auto whitespace-pre-wrap">{content}</pre>
   );

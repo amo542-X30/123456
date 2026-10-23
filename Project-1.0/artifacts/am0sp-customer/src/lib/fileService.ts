@@ -21,6 +21,21 @@ async function waitForUser(maxWaitMs: number = 3000): Promise<string> {
   return user.id;
 }
 
+function createFileId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+
+  // Safari versions without randomUUID still expose secure random bytes.
+  // Keep the storage key UUID-shaped without falling back to weak randomness.
+  if (typeof crypto.getRandomValues !== 'function') {
+    throw new Error('Secure file uploads require a browser with cryptographic random support.');
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
   return {
@@ -36,7 +51,7 @@ export async function uploadFile(
 ): Promise<FileItem> {
   const userId = await waitForUser();
 
-  const fileId = crypto.randomUUID();
+  const fileId = createFileId();
   const mimeType = getUploadMimeType(file);
   const category = getFileCategory(mimeType);
 
@@ -71,9 +86,13 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   gif: 'image/gif',
   heic: 'image/heic',
   heif: 'image/heif',
+  ico: 'image/x-icon',
+  jfif: 'image/jpeg',
+  jpe: 'image/jpeg',
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
   png: 'image/png',
+  svg: 'image/svg+xml',
   tif: 'image/tiff',
   tiff: 'image/tiff',
   webp: 'image/webp',
@@ -88,9 +107,34 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   mpg: 'video/mpeg',
   mts: 'video/mp2t',
   webm: 'video/webm',
+  aac: 'audio/aac',
+  flac: 'audio/flac',
+  m4a: 'audio/mp4',
+  mid: 'audio/midi',
+  midi: 'audio/midi',
+  mp3: 'audio/mpeg',
+  oga: 'audio/ogg',
+  ogg: 'audio/ogg',
+  opus: 'audio/opus',
+  wav: 'audio/wav',
+  wma: 'audio/x-ms-wma',
+  '7z': 'application/x-7z-compressed',
+  bz2: 'application/x-bzip2',
+  gz: 'application/gzip',
+  rar: 'application/vnd.rar',
+  tar: 'application/x-tar',
+  xz: 'application/x-xz',
+  zip: 'application/zip',
   csv: 'text/csv',
+  css: 'text/css',
+  htm: 'text/html',
+  html: 'text/html',
+  js: 'text/javascript',
+  log: 'text/plain',
   md: 'text/markdown',
   txt: 'text/plain',
+  yaml: 'text/yaml',
+  yml: 'text/yaml',
   xml: 'application/xml',
   json: 'application/json',
   pdf: 'application/pdf',
