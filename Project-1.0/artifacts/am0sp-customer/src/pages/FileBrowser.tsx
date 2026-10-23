@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import {
   getFiles, uploadFile, renameFile, toggleFavorite, moveFile,
   softDeleteFile, downloadFile, getFileUrl, getThumbnailUrl, getStreamingUrl, inspectVideo,
@@ -204,11 +204,19 @@ export function FileBrowser({ category, onGoBack, backRef }: FileBrowserProps) {
   };
 
   const handleDownload = async (file: FileItem) => {
-    setDownloadState({ file, progress: null, status: 'transferring' });
+    const transferStartedAt = performance.now();
+    flushSync(() => {
+      setDownloadState({ file, progress: null, status: 'transferring' });
+    });
     try {
       await downloadFile(file, (p) => {
         setDownloadState((prev) => prev ? { ...prev, progress: p } : prev);
       });
+      const minimumVisibleTime = 250;
+      const elapsed = performance.now() - transferStartedAt;
+      if (elapsed < minimumVisibleTime) {
+        await new Promise((resolve) => setTimeout(resolve, minimumVisibleTime - elapsed));
+      }
       setDownloadState((prev) => prev ? {
         ...prev,
         progress: { loaded: file.size_bytes, total: file.size_bytes, percent: 100 },

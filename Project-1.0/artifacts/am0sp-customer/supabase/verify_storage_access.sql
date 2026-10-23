@@ -15,7 +15,23 @@ SELECT
     ELSE 'PRIVATE'
   END AS status,
   COALESCE(
-    (SELECT name FROM storage.buckets WHERE id = 'am0sp-vault'),
+    (SELECT name
+     FROM storage.buckets
+     WHERE id = 'am0sp-vault')
+      || '; allowed_mime_types='
+      || COALESCE(
+        (SELECT array_to_string(allowed_mime_types, ',')
+         FROM storage.buckets
+         WHERE id = 'am0sp-vault'),
+        '(unrestricted)'
+      )
+      || '; file_size_limit='
+      || COALESCE(
+        (SELECT file_size_limit::text
+         FROM storage.buckets
+         WHERE id = 'am0sp-vault'),
+        '(default)'
+      ),
     'No bucket row'
   ) AS details
 UNION ALL

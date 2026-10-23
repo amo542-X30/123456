@@ -18,6 +18,7 @@ Apply the migrations in `supabase/migrations/` in filename order to the new proj
 4. `20261003024548_20261003000000_fix_security_audit_critical_and_high.sql`
 5. `20261003024713_20261003010000_revoke_public_execute_handle_new_user.sql`
 6. `20261005000000_006_ensure_private_vault_bucket.sql`
+7. `20261023000000_007_allow_all_vault_file_types.sql`
 
 Supabase Auth manages customer accounts. The application tables are:
 
@@ -29,9 +30,9 @@ Supabase Auth manages customer accounts. The application tables are:
 - `passkey_challenges` — short-lived challenges accessible only to the server-side passkey function.
 - `user_settings` — per-user appearance preferences.
 
-The migrations enable row-level security and scope customer access to `auth.uid()`. The `am0sp-vault` Storage bucket is private; object policies restrict each authenticated user to objects under their own user-ID path. There is no public backup bucket.
+The migrations enable row-level security and scope customer access to `auth.uid()`. The `am0sp-vault` Storage bucket is private; object policies restrict each authenticated user to objects under their own user-ID path. Migration 007 removes a bucket MIME allowlist so the existing file picker can upload arbitrary file types; it does not change the bucket's file-size limit or access policies. There is no public backup bucket.
 
-After migration, run `supabase/verify_storage_access.sql` in the SQL Editor for the same project. Expect a `PRIVATE` bucket, enabled object RLS, and four owner-scoped policies. The bucket migration ensures the bucket exists and is private without modifying existing objects.
+After migration, run `supabase/verify_storage_access.sql` in the SQL Editor for the same project. Expect a `PRIVATE` bucket with `allowed_mime_types=(unrestricted)`, enabled object RLS, and four owner-scoped policies. The query also reports the configured file-size limit; migration 007 does not change it.
 
 ## Connect the customer app
 

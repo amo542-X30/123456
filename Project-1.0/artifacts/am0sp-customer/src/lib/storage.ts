@@ -10,7 +10,24 @@ export interface UploadResult {
 }
 
 const API_BASE_URL = `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`;
-const TUS_ENDPOINT = `${SUPABASE_URL.replace(/\/+$/, '')}/storage/v1/upload/resumable`;
+
+function getTusEndpoint(supabaseUrl: string): string {
+  if (!supabaseUrl) return '';
+
+  const endpoint = new URL(supabaseUrl);
+  if (
+    endpoint.hostname.endsWith('.supabase.co') &&
+    !endpoint.hostname.endsWith('.storage.supabase.co')
+  ) {
+    endpoint.hostname = `${endpoint.hostname.slice(0, -'.supabase.co'.length)}.storage.supabase.co`;
+  }
+  endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, '')}/storage/v1/upload/resumable`;
+  endpoint.search = '';
+  endpoint.hash = '';
+  return endpoint.toString();
+}
+
+const TUS_ENDPOINT = getTusEndpoint(SUPABASE_URL);
 const TUS_THRESHOLD_BYTES = 6 * 1024 * 1024;
 const TUS_CHUNK_SIZE = 6 * 1024 * 1024;
 

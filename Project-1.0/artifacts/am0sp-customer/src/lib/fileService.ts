@@ -155,11 +155,7 @@ function getUploadMimeType(file: File): string {
   const extension = file.name.split('.').at(-1)?.toLowerCase();
   const extensionMimeType = extension ? MIME_BY_EXTENSION[extension] : undefined;
 
-  if (
-    browserMimeType &&
-    browserMimeType !== 'application/octet-stream' &&
-    getFileCategory(browserMimeType) !== 'other'
-  ) {
+  if (browserMimeType && browserMimeType !== 'application/octet-stream') {
     return browserMimeType;
   }
   return extensionMimeType || browserMimeType || 'application/octet-stream';
@@ -440,16 +436,6 @@ export async function downloadFile(
   const totalSize = file.size_bytes || 0;
   const isSmallFile = totalSize > 0 && totalSize < SMALL_FILE_THRESHOLD;
 
-  if (isIOS) {
-    onProgress?.({ loaded: 0, total: totalSize, percent: null });
-    if (iosWindow && !iosWindow.closed) {
-      iosWindow.location.replace(signedUrl);
-    } else {
-      window.location.assign(signedUrl);
-    }
-    return;
-  }
-
   if (isSmallFile) {
     const downloadUrl = isB2File
       ? storageProvider.getB2ObjectUrl(file.storage_key, fileName)
@@ -464,16 +450,30 @@ export async function downloadFile(
     const rawBlob = await blobPromise;
     const typedBlob = new Blob([rawBlob], { type: mimeType });
 
-    if (isIOS && navigator.canShare) {
+    if (isIOS && navigator.canShare && navigator.share) {
       const sharedFile = new File([typedBlob], fileName, { type: mimeType });
       if (navigator.canShare({ files: [sharedFile] })) {
         try {
           await navigator.share({ files: [sharedFile], title: fileName });
+          iosWindow?.close();
           return;
         } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            iosWindow?.close();
+            return;
+          }
         }
       }
+    }
+
+    if (isIOS) {
+      onProgress?.({ loaded: 0, total: totalSize, percent: null });
+      if (iosWindow && !iosWindow.closed) {
+        iosWindow.location.replace(signedUrl);
+      } else {
+        triggerNativeDownload(signedUrl, fileName);
+      }
+      return;
     }
 
     const blobUrl = URL.createObjectURL(typedBlob);
@@ -489,8 +489,11 @@ export async function downloadFile(
   // without loading file bytes into JavaScript memory. The URL includes an
   // attachment disposition so cross-origin navigation still downloads the file.
   onProgress?.({ loaded: 0, total: totalSize, percent: null });
-
-  triggerNativeDownload(signedUrl, fileName);
+  if (isIOS && iosWindow && !iosWindow.closed) {
+    iosWindow.location.replace(signedUrl);
+  } else {
+    triggerNativeDownload(signedUrl, fileName);
+  }
 }
 
 export interface VideoInspectResult {
