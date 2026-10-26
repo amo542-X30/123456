@@ -94,7 +94,7 @@ function storageError(error: unknown, operation: string): Response {
           ? "Stored object was not found."
           : code === 416
             ? "The requested byte range is not available."
-            : "B2 storage request failed.",
+            : getB2StorageErrorMessage(error, operation),
     },
     code,
   );

@@ -159,7 +159,9 @@ export function getB2StorageErrorMessage(error: unknown, operation: string): str
     status === 403 ||
     ["AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"].includes(code)
   ) {
-    return "Backblaze B2 denied the upload. Check that the server key can write to the configured bucket.";
+    return operation === "upload"
+      ? "Backblaze B2 denied the upload. Check that the server key can write to the configured bucket."
+      : "Backblaze B2 denied access to this file. Check that the server key has read access to the configured bucket.";
   }
   if (status === 413) {
     return "The upload was rejected because the receiving service's file-size limit was exceeded.";
@@ -167,7 +169,7 @@ export function getB2StorageErrorMessage(error: unknown, operation: string): str
   if (operation === "upload") {
     return "Backblaze B2 could not store this file. Retry; if it continues, ask an administrator to check the B2 service and bucket configuration.";
   }
-  return "B2 storage request failed.";
+  return "Backblaze B2 could not complete this file request. Check the server-side bucket configuration and retry.";
 }
 
 export async function uploadB2Object(options: {

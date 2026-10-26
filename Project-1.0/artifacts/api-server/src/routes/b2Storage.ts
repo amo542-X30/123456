@@ -111,7 +111,7 @@ function handleStorageError(req: Request, res: Response, operation: string, erro
         ? "Stored object was not found."
         : responseStatus === 416
           ? "The requested byte range is not available."
-          : "B2 storage request failed.",
+          : getB2StorageErrorMessage(error, operation),
   });
 }
 
