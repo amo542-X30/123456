@@ -13,8 +13,8 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ### Customer web app
 
-- The Replit preview runs the managed `artifacts/am0sp-customer: web` workflow at `/`; it supplies the required `PORT` and `BASE_PATH`.
-- Install just this app and its dependencies with `pnpm install --filter @workspace/am0sp-customer --frozen-lockfile`.
+- The Replit preview runs the managed `Project-1.0/artifacts/am0sp-customer: web` workflow at `/`; it supplies the required `PORT` and `BASE_PATH`.
+- From the workspace root, install just this app and its dependencies with `pnpm --dir Project-1.0 install --filter @workspace/am0sp-customer --frozen-lockfile`.
 - The app expects `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Replit Secrets. The anon key is exposed to the browser by design; never use a Supabase service-role key here.
 - If the app shows its Supabase setup screen, it has not received valid values for both settings.
 - New uploads use server-side Backblaze B2. Configure `B2_APPLICATION_KEY_ID` and `B2_APPLICATION_KEY` as Replit Secrets and `B2_BUCKET_NAME` as a non-secret environment variable; existing Supabase Storage files remain accessible and are not migrated.
