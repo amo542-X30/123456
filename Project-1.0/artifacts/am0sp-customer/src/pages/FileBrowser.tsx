@@ -8,6 +8,7 @@ import type { VideoInspectResult, DownloadProgress } from '@/lib/fileService';
 import { getFolders, createFolder, getFolderPath, deleteFolder } from '@/lib/folderService';
 import type { FileItem, FileCategory, Folder } from '@/lib/types';
 import { formatBytes, formatDate, getFileIcon, cn } from '@/lib/utils';
+import { isB2StorageBucket, storageProvider } from '@/lib/storage';
 import {
   Upload, Download, Trash2, Star, Folder as FolderIcon, FolderPlus,
   Search, ArrowLeft, X, ChevronRight, MoreVertical, File as FileIcon,
@@ -1085,14 +1086,16 @@ function FileViewer({
   onFileChange: (file: FileItem) => void;
   onDownload: (file: FileItem) => void;
 }) {
-  const photos = useMemo(() => allFiles.filter((f) => f.category === 'photo'), [allFiles]);
+  const photos = useMemo(() => allFiles.filter((f) => f.mime_type.startsWith('image/')), [allFiles]);
   const currentPhotoIdx = photos.findIndex((f) => f.id === file.id);
-  const isPhoto = file.category === 'photo' && currentPhotoIdx >= 0;
+  const isPhoto = file.mime_type.startsWith('image/') && currentPhotoIdx >= 0;
 
-  const videos = useMemo(() => allFiles.filter((f) => f.category === 'video'), [allFiles]);
+  const videos = useMemo(() => allFiles.filter((f) => f.mime_type.startsWith('video/')), [allFiles]);
   const currentVideoIdx = videos.findIndex((f) => f.id === file.id);
-  const isVideo = file.category === 'video' && currentVideoIdx >= 0;
-  const isTextPreview = file.category === 'document' && (
+  const isVideo = file.mime_type.startsWith('video/') && currentVideoIdx >= 0;
+  const isAudio = file.mime_type.startsWith('audio/');
+  const isPdf = file.mime_type === 'application/pdf';
+  const isTextPreview = (
     file.mime_type.startsWith('text/') ||
     file.mime_type === 'application/json' ||
     file.mime_type === 'application/xml'
@@ -1329,7 +1332,7 @@ function FileViewer({
         {url && !loading && !error && (
           <div className={cn(
             'relative overflow-hidden flex-1 min-h-0 flex flex-col',
-            file.category === 'video' && !imgError
+            isVideo && !imgError
               ? 'rounded-xl'
               : 'glass-panel p-2'
           )}>
@@ -1340,7 +1343,7 @@ function FileViewer({
             >
               <ArrowLeft className="w-6 h-6" />
             </button>
-            {file.category === 'video' && !imgError && (
+            {isVideo && !imgError && (
               <Am0spVideoPlayer
                 src={url}
                 fileName={file.original_name}
@@ -1360,7 +1363,7 @@ function FileViewer({
                 }}
               />
             )}
-            {file.category === 'video' && imgError && (
+            {isVideo && imgError && (
               <div className="p-8 text-center">
                 <AlertCircle className="w-10 h-10 text-cyber-red mx-auto mb-3" />
                 <p className="text-sm text-gray-300 mb-2">Failed to play video.</p>
@@ -1395,20 +1398,29 @@ function FileViewer({
                 )}
               </div>
             )}
-            {file.category === 'document' && file.mime_type === 'application/pdf' && (
+            {isPdf && (
               <iframe src={url} className="w-full flex-1 min-h-0 rounded-lg" title={file.original_name} />
             )}
             {isTextPreview && (
-              <TextPreview url={url} />
+              <TextPreview url={url} file={file} />
             )}
-            {(file.category === 'other' || (file.category === 'document' && file.mime_type !== 'application/pdf' && !isTextPreview)) && (
-              <div className="p-12 text-center">
-                <FileIcon className="w-12 h-12 text-vault-400 mx-auto mb-3" />
-                <p className="text-sm text-gray-300">Preview not available for this file type</p>
-                <button onClick={() => onDownload(file)} className="btn-primary mt-4">
-                  <Download className="w-4 h-4 inline mr-2" /> Download
-                </button>
+            {isAudio && (
+              <div className="w-full p-6 flex items-center justify-center">
+                <audio controls preload="metadata" src={url} className="w-full">
+                  Your browser does not support audio playback.
+                </audio>
               </div>
+            )}
+            {!isVideo && !isAudio && !isPdf && !isTextPreview && (
+              <object data={url} type={file.mime_type} className="w-full flex-1 min-h-0 rounded-lg">
+                <div className="p-12 text-center">
+                  <FileIcon className="w-12 h-12 text-vault-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-300">Preview not available for this file type</p>
+                  <button onClick={() => onDownload(file)} className="btn-primary mt-4">
+                    <Download className="w-4 h-4 inline mr-2" /> Download
+                  </button>
+                </div>
+              </object>
             )}
           </div>
         )}
@@ -1418,30 +1430,46 @@ function FileViewer({
   );
 }
 
-function TextPreview({ url }: { url: string }) {
+function TextPreview({ url, file }: { url: string; file: FileItem }) {
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
+    let objectUrl: string | null = null;
     setLoading(true);
     setError(null);
-    fetch(url, { signal: controller.signal })
-      .then((response) => {
+
+    const loadText = async () => {
+      try {
+        let sourceUrl = url;
+        if (isB2StorageBucket(file.bucket_id)) {
+          sourceUrl = await storageProvider.getBlobUrl(file.storage_key, file.bucket_id);
+          if (controller.signal.aborted) {
+            URL.revokeObjectURL(sourceUrl);
+            return;
+          }
+          objectUrl = sourceUrl;
+        }
+
+        const response = await fetch(sourceUrl, { signal: controller.signal });
         if (!response.ok) throw new Error(`Preview request failed (${response.status})`);
-        return response.text();
-      })
-      .then(setContent)
-      .catch((err: unknown) => {
+        setContent(await response.text());
+      } catch (err: unknown) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
         setError(err instanceof Error ? err.message : 'Unable to load this preview');
-      })
-      .finally(() => {
+      } finally {
         if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [url]);
+      }
+    };
+
+    void loadText();
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url, file.storage_key, file.bucket_id]);
 
   if (loading) return <div className="terminal-text p-8 text-center animate-pulse">LOADING…</div>;
   if (error) {
