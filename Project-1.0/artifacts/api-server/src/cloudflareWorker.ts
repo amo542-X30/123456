@@ -9,6 +9,7 @@ import {
   deleteB2Object,
   getB2Object,
   getB2Target,
+  getB2StorageErrorMessage,
   inspectB2Video,
   type B2StorageEnvironment,
 } from "./lib/b2Storage";
@@ -74,7 +75,7 @@ async function requireUserId(request: Request, env: Env): Promise<string | Respo
   return user.id;
 }
 
-function storageError(error: unknown): Response {
+function storageError(error: unknown, operation: string): Response {
   const record = error as { name?: unknown; $metadata?: { httpStatusCode?: number } };
   const status = record.$metadata?.httpStatusCode;
   const name = typeof record.name === "string" ? record.name : "";
@@ -87,7 +88,9 @@ function storageError(error: unknown): Response {
   return json(
     {
       error:
-        code === 404
+        operation === "upload"
+          ? getB2StorageErrorMessage(error, operation)
+          : code === 404
           ? "Stored object was not found."
           : code === 416
             ? "The requested byte range is not available."
@@ -252,7 +255,17 @@ async function routeB2(request: Request, env: Env): Promise<Response> {
 
     return json({ error: "Method not allowed." }, 405);
   } catch (error) {
-    return storageError(error);
+    const operation =
+      request.method === "POST"
+        ? "upload"
+        : request.method === "GET" && suffix === "signed-url"
+          ? "sign"
+          : request.method === "GET" && suffix === "inspect"
+            ? "inspect"
+            : request.method === "GET"
+              ? "download"
+              : "delete";
+    return storageError(error, operation);
   }
 }
 

@@ -16,6 +16,7 @@ import {
   createB2SignedUrl,
   deleteB2Object,
   getB2Object,
+  getB2StorageErrorMessage,
   inspectB2Video,
   uploadB2Object,
 } from "../lib/b2Storage";
@@ -89,10 +90,12 @@ function handleStorageError(req: Request, res: Response, operation: string, erro
 
   const errorRecord = error as {
     name?: unknown;
+    Code?: unknown;
     $metadata?: { httpStatusCode?: number };
   };
   const status = errorRecord.$metadata?.httpStatusCode;
   const errorName = typeof errorRecord.name === "string" ? errorRecord.name : "UnknownError";
+  const errorCode = typeof errorRecord.Code === "string" ? errorRecord.Code : undefined;
   const responseStatus =
     status === 404 || errorName === "NoSuchKey" || errorName === "NotFound"
       ? 404
@@ -100,10 +103,11 @@ function handleStorageError(req: Request, res: Response, operation: string, erro
         ? 416
         : 502;
 
-  req.log.error({ operation, errorName, status: responseStatus }, "B2 storage request failed.");
+  req.log.error({ operation, errorName, errorCode, status: responseStatus }, "B2 storage request failed.");
   res.status(responseStatus).json({
-    error:
-      responseStatus === 404
+    error: operation === "upload"
+      ? getB2StorageErrorMessage(error, operation)
+      : responseStatus === 404
         ? "Stored object was not found."
         : responseStatus === 416
           ? "The requested byte range is not available."

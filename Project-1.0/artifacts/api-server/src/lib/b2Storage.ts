@@ -135,6 +135,41 @@ export async function getB2Target(
   return targetPromise;
 }
 
+export function getB2StorageErrorMessage(error: unknown, operation: string): string {
+  const record = error && typeof error === "object"
+    ? error as {
+        name?: unknown;
+        message?: unknown;
+        Code?: unknown;
+        $metadata?: { httpStatusCode?: number };
+      }
+    : {};
+  const message = typeof record.message === "string" ? record.message : "";
+  const name = typeof record.name === "string" ? record.name : "";
+  const code = typeof record.Code === "string" ? record.Code : name;
+  const status = record.$metadata?.httpStatusCode;
+
+  if (message.includes("B2_APPLICATION_KEY_ID") || message.includes("B2_APPLICATION_KEY")) {
+    return "Backblaze B2 is missing server-side credentials. Check the API server's B2 key configuration.";
+  }
+  if (message.includes("B2_BUCKET_NAME") || code === "NoSuchBucket") {
+    return "The configured Backblaze B2 bucket could not be used. Check the bucket name and the server key's bucket access.";
+  }
+  if (
+    status === 403 ||
+    ["AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"].includes(code)
+  ) {
+    return "Backblaze B2 denied the upload. Check that the server key can write to the configured bucket.";
+  }
+  if (status === 413) {
+    return "The upload was rejected because the receiving service's file-size limit was exceeded.";
+  }
+  if (operation === "upload") {
+    return "Backblaze B2 could not store this file. Retry; if it continues, ask an administrator to check the B2 service and bucket configuration.";
+  }
+  return "B2 storage request failed.";
+}
+
 export async function uploadB2Object(options: {
   key: string;
   body: Readable;

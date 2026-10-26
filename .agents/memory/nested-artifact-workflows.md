@@ -14,3 +14,9 @@ When root-level tooling is needed but a full workspace install is blocked by an 
 **Why:** A full install hit the package firewall on an unrelated transitive package, while the filtered root install made the declared Wrangler tool available without changing the lockfile.
 
 **How to apply:** For root scripts such as Cloudflare dry-runs, filter installation to the root package instead of changing unrelated dependencies to force a full install.
+
+For the AM0SP customer app, the frontend preview and B2 API are separate services. A rendered login page does not prove the upload API is installed or running; check the API workflow and `/api/healthz` when all uploads fail.
+
+**Why:** The customer UI loaded while the API workflow could not build because its workspace dependencies had not been installed, so every upload request lacked a healthy backend.
+
+**How to apply:** Verify the customer app and API server independently before diagnosing credentials or changing upload code.

@@ -46,6 +46,34 @@ async function getResponseError(response: Response, fallback: string): Promise<E
   return new Error(`${fallback} (${response.status})`);
 }
 
+function getUploadHttpError(status: number, responseText: string): Error {
+  try {
+    const response = JSON.parse(responseText) as { error?: unknown };
+    if (typeof response.error === 'string' && response.error) {
+      return new Error(response.error);
+    }
+  } catch {
+    // The preview proxy can return HTML for errors before the API route handles them.
+  }
+
+  if (status === 0) {
+    return new Error('The upload service could not be reached. Check your connection and retry.');
+  }
+  if (status === 401) {
+    return new Error('Your sign-in session expired. Sign in again, then retry the upload.');
+  }
+  if (status === 413) {
+    return new Error('This file exceeds the upload service size limit. Try a smaller file.');
+  }
+  if (status === 502 || status === 503) {
+    return new Error('The upload service is unavailable or could not reach Backblaze B2. Retry shortly; if it continues, ask an administrator to check the API service.');
+  }
+  if (status === 404) {
+    return new Error('The upload API route was not found. Reload the app and retry; if it continues, ask an administrator to check the API service.');
+  }
+  return new Error(`Backblaze B2 upload failed (HTTP ${status}). Retry; if it continues, ask an administrator to check the storage service.`);
+}
+
 function uploadB2File(
   fileId: string,
   file: File,
@@ -66,24 +94,19 @@ function uploadB2File(
           onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)));
         }
       };
-      request.onerror = () => reject(new Error('Network error while uploading to Backblaze B2.'));
+      request.onerror = () => reject(getUploadHttpError(0, ''));
       request.onabort = () => reject(new Error('The Backblaze B2 upload was interrupted.'));
       request.onload = () => {
+        if (request.status < 200 || request.status >= 300) {
+          reject(getUploadHttpError(request.status, request.responseText));
+          return;
+        }
+
         let response: unknown;
         try {
           response = JSON.parse(request.responseText);
         } catch {
-          reject(new Error(`Backblaze B2 returned an invalid response (${request.status}).`));
-          return;
-        }
-
-        if (request.status < 200 || request.status >= 300) {
-          const message =
-            response && typeof response === 'object' && 'error' in response &&
-            typeof response.error === 'string'
-              ? response.error
-              : `Backblaze B2 upload failed (${request.status}).`;
-          reject(new Error(message));
+          reject(new Error('The upload service returned an invalid success response. Retry; if it continues, ask an administrator to check the API service.'));
           return;
         }
 

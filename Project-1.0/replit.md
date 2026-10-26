@@ -4,7 +4,8 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- The managed `artifacts/api-server: API Server` workflow serves `/api` on port 8080 and must be healthy for customer B2 file transfers.
+- From the workspace root, install the API server and its workspace libraries with `pnpm --dir Project-1.0 install --filter @workspace/api-server --filter @workspace/api-zod --filter @workspace/db --frozen-lockfile`.
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
